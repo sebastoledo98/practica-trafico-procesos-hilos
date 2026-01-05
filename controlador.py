@@ -8,15 +8,18 @@ from semaforo import SemaforoProcesos, SemaforoHilos
 from trafico import GeneradorTrafico
 
 class ControladorTrafico:
-    def __init__(self, modo="PROCESO"):
+    def __init__(self, modo="PROCESO", cantidad_ciclos=10):
         self.modo = modo
-        
+        self.cantidad_ciclos = cantidad_ciclos
+
         if self.modo == "PROCESO":
             self.lock_print = multiprocessing.Lock()
             self.semaforo_cruce = multiprocessing.Semaphore(1)
             self.evento_fin = multiprocessing.Event()
             self.colas = [multiprocessing.Queue() for _ in range(4)]
             self.estados_luz = [multiprocessing.Value('i', ROJO) for _ in range(4)]
+            self.cantidad_autos = multiprocessing.Value('i', 0)
+            self.tiempo_espera = multiprocessing.Value('d', 0.0)
         else: # MODO HILO
             self.lock_print = threading.Lock()
             self.semaforo_cruce = threading.Lock()
@@ -26,13 +29,19 @@ class ControladorTrafico:
                 def __init__(self): self.value = ROJO
             self.estados_luz = [EstadoCompartido() for _ in range(4)]
 
+            class StatsHilos:
+                def __init__(self):
+                    self.autos = 0
+                    self.espera = 0.0
+                    self.lock = threading.Lock
+
         self.procesos_semaforos = []
         for i in range(4):
             if self.modo == "PROCESO":
-                s = SemaforoProcesos(i, VIAS[i], self.colas[i], self.estados_luz[i], 
+                s = SemaforoProcesos(i, VIAS[i], self.colas[i], self.estados_luz[i],
                                      self.lock_print, self.semaforo_cruce, self.evento_fin)
             else:
-                s = SemaforoHilos(i, VIAS[i], self.colas[i], self.estados_luz[i], 
+                s = SemaforoHilos(i, VIAS[i], self.colas[i], self.estados_luz[i],
                                   self.lock_print, self.semaforo_cruce, self.evento_fin)
             self.procesos_semaforos.append(s)
 
@@ -59,9 +68,9 @@ class ControladorTrafico:
         self.generador.start()
 
         try:
-            for i in range(CANTIDAD_CICLOS):
+            for i in range(self.cantidad_ciclos):
                 if self.evento_fin.is_set(): break
-                print_safe(self.lock_print, f"\n === CICLO {i+1}/{CANTIDAD_CICLOS} ===")
+                print_safe(self.lock_print, f"\n === CICLO {i+1}/{self.cantidad_ciclos} ===")
                 self._cambiar_fase(norte_sur=True)
                 self._cambiar_fase(norte_sur=False)
             print_safe(self.lock_print, f"\n === FIN DE CICLOS ===")
